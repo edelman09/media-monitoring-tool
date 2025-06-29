@@ -1,0 +1,12 @@
+matplotlib
+pandas
+numpy
+selenium
+scikit-learn
+beautifulsoup4
+requests
+webdriver-manager
+openpyxl
+nltk
+logging
+streamlit
