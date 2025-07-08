@@ -9,17 +9,64 @@ def render_extraction_tab():
     """Render the Data Extraction tab"""
     
     # Get platform from sidebar (passed from main app)
-    platform = st.session_state.get('selected_platform', 'Talkwalker')
+    platform = st.session_state.get('selected_platform', 'Google News')
+    selenium_available = st.session_state.get('selenium_available', False)
     
     # Initialize status placeholder for showing operation progress
     status_placeholder = st.empty()
 
     if platform == "Talkwalker":
-        render_talkwalker_extraction(status_placeholder)
+        if selenium_available:
+            render_talkwalker_extraction(status_placeholder)
+        else:
+            render_selenium_unavailable_message("Talkwalker")
     elif platform == "Newswhip":
-        render_newswhip_extraction(status_placeholder)
+        if selenium_available:
+            render_newswhip_extraction(status_placeholder)
+        else:
+            render_selenium_unavailable_message("Newswhip")
     else:  # Google News
         render_google_news_extraction(status_placeholder)
+
+def render_selenium_unavailable_message(platform_name):
+    """Render message when Selenium is not available"""
+    st.info(f"🚫 **{platform_name} extraction is not available on Streamlit Community Cloud**")
+    
+    st.markdown(f"""
+    ### Why is {platform_name} not available?
+    
+    {platform_name} requires browser automation using Selenium WebDriver, which is not supported 
+    in Streamlit Community Cloud's managed environment.
+    
+    ### What you can do:
+    
+    1. **Use Google News**: Switch to Google News extraction which works on all platforms
+    2. **Use Data Aggregation**: Upload exported files from {platform_name} and aggregate them
+    3. **Run Locally**: Download this app and run it on your local machine to access all features
+    
+    ### How to run locally:
+    
+    ```bash
+    git clone <repository>
+    pip install -r requirements.txt
+    streamlit run app.py
+    ```
+    
+    ### Alternative Workflow:
+    
+    1. Export data manually from {platform_name}
+    2. Upload the exported files in the **Data Aggregation** tab
+    3. Use **Intelligent Search** to analyze your data
+    """)
+    
+    # Show what's still available
+    st.success("""
+    ✅ **Still Available on Streamlit Cloud:**
+    - Google News extraction
+    - Data aggregation from multiple sources
+    - Intelligent search and analysis
+    - File export and download
+    """)
 
 def initialize_talkwalker_session_state():
     """Initializes Talkwalker specific session state variables if they don't exist."""
