@@ -1,16 +1,37 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver import ActionChains
 import time
 import logging
 import os
-import shutil
 
 logger = logging.getLogger(__name__)
+
+# Try to import selenium - gracefully handle if not available
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver import ActionChains
+    from webdriver_manager.chrome import ChromeDriverManager
+    SELENIUM_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Selenium not available: {e}")
+    SELENIUM_AVAILABLE = False
+    
+    # Create mock classes to prevent import errors
+    class MockWebDriver:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("Selenium is not available. Please install selenium and webdriver-manager for browser automation features.")
+    
+    webdriver = type('MockWebDriver', (), {'Chrome': MockWebDriver})
+    Service = MockWebDriver
+    Options = MockWebDriver
+    WebDriverWait = MockWebDriver
+    EC = type('MockEC', (), {})
+    ActionChains = MockWebDriver
+    ChromeDriverManager = MockWebDriver
+    By = type('MockBy', (), {})
 
 class TalkwalkerScraper:
     """
@@ -25,6 +46,12 @@ class TalkwalkerScraper:
             email (str): Talkwalker account email
             password (str): Talkwalker account password
         """
+        if not SELENIUM_AVAILABLE:
+            raise ImportError(
+                "Selenium is not available. Talkwalker scraping requires browser automation. "
+                "Please run this application locally with selenium installed, or use Google News extraction instead."
+            )
+            
         self.email = email
         self.password = password
         self.driver = None
@@ -33,41 +60,6 @@ class TalkwalkerScraper:
         self.is_logged_in = False
         self.current_project = None
         
-    def _get_chromedriver_path(self):
-        """
-        Get the path to ChromeDriver, preferring system installation.
-        
-        Returns:
-            str: Path to ChromeDriver executable
-        """
-        # Try system-installed chromedriver first
-        system_paths = [
-            '/usr/bin/chromedriver',
-            '/usr/local/bin/chromedriver',
-            '/opt/google/chrome/chromedriver',
-        ]
-        
-        for path in system_paths:
-            if os.path.exists(path) and os.access(path, os.X_OK):
-                logger.info(f"Using system ChromeDriver at: {path}")
-                return path
-        
-        # Try to find chromedriver in PATH
-        chromedriver_path = shutil.which('chromedriver')
-        if chromedriver_path:
-            logger.info(f"Found ChromeDriver in PATH: {chromedriver_path}")
-            return chromedriver_path
-        
-        # Fallback to webdriver-manager only if system chromedriver not found
-        try:
-            from webdriver_manager.chrome import ChromeDriverManager
-            path = ChromeDriverManager().install()
-            logger.info(f"Using WebDriverManager ChromeDriver: {path}")
-            return path
-        except Exception as e:
-            logger.error(f"Failed to get ChromeDriver path: {e}")
-            raise Exception("ChromeDriver not found. Please ensure it's installed.")
-    
     def _setup_driver(self):
         """
         Set up the Chrome driver with proper options if it's not already set up.
@@ -75,39 +67,16 @@ class TalkwalkerScraper:
         Returns:
             str: Path to download directory
         """
+        if not SELENIUM_AVAILABLE:
+            raise ImportError("Selenium is not available")
+            
         # Only setup the driver if it doesn't exist or has been quit
         if self.driver is None:
             options = Options()
-            
-            # Essential options for headless operation
-            options.add_argument("--headless=new")  # Use new headless mode
+            options.add_argument("--start-maximized")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--disable-software-rasterizer")
-            options.add_argument("--disable-background-timer-throttling")
-            options.add_argument("--disable-backgrounding-occluded-windows")
-            options.add_argument("--disable-renderer-backgrounding")
-            options.add_argument("--disable-features=TranslateUI")
-            options.add_argument("--disable-ipc-flooding-protection")
-            options.add_argument("--window-size=1920,1080")
-            options.add_argument("--start-maximized")
-            
-            # Additional options for container environments
-            options.add_argument("--remote-debugging-port=9222")
-            options.add_argument("--disable-background-networking")
-            options.add_argument("--disable-default-apps")
-            options.add_argument("--disable-extensions")
-            options.add_argument("--disable-sync")
-            options.add_argument("--disable-translate")
-            options.add_argument("--hide-scrollbars")
-            options.add_argument("--metrics-recording-only")
-            options.add_argument("--mute-audio")
-            options.add_argument("--no-first-run")
-            options.add_argument("--safebrowsing-disable-auto-update")
-            options.add_argument("--ignore-certificate-errors")
-            options.add_argument("--ignore-ssl-errors")
-            options.add_argument("--ignore-certificate-errors-spki-list")
+            # options.add_argument("--headless")
             
             # Set download preferences
             download_path = os.path.join(os.getcwd(), "downloads")
@@ -117,28 +86,16 @@ class TalkwalkerScraper:
                 "download.default_directory": download_path,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
-                "safebrowsing.enabled": False,
-                "profile.default_content_setting_values.notifications": 2,
-                "profile.default_content_settings.popups": 0,
-                "profile.managed_default_content_settings.images": 2
+                "safebrowsing.enabled": False
             }
             options.add_experimental_option("prefs", prefs)
             
-            try:
-                # Get ChromeDriver path
-                chromedriver_path = self._get_chromedriver_path()
-                service = Service(chromedriver_path)
-                
-                self.driver = webdriver.Chrome(service=service, options=options)
-                self.wait = WebDriverWait(self.driver, 20)
-                self.actions = ActionChains(self.driver)
-                logger.info("Chrome driver has been set up successfully")
-                
-                return download_path
-                
-            except Exception as e:
-                logger.error(f"Failed to setup Chrome driver: {e}")
-                raise Exception(f"Failed to initialize ChromeDriver: {e}")
+            self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            self.wait = WebDriverWait(self.driver, 20)
+            self.actions = ActionChains(self.driver)
+            logger.info("Chrome driver has been set up")
+            
+            return download_path
         else:
             # Driver already exists, just return the download path
             download_path = os.path.join(os.getcwd(), "downloads")
