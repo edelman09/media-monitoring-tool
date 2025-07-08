@@ -29,6 +29,22 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     chromium \
     chromium-driver \
+    libglib2.0-0 \
+    libnss3-dev \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libxi6 \
+    libxtst6 \
+    libxss1 \
+    libgconf-2-4 \
+    libxrandr2 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgtk-3-0 \
+    libgtk-4-1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,6 +52,9 @@ RUN apt-get update && apt-get install -y \
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROMEDRIVER_PATH=/usr/bin/chromedriver \
     PATH=$PATH:/usr/bin
+
+# Ensure chromedriver has proper permissions
+RUN chmod +x /usr/bin/chromedriver
 
 # Copy dependencies
 COPY requirements.txt .
@@ -48,6 +67,9 @@ RUN python -m nltk.downloader punkt stopwords wordnet
 
 # Copy application code
 COPY . .
+
+# Create downloads directory
+RUN mkdir -p /app/downloads
 
 # Expose Streamlit port
 EXPOSE 8501
