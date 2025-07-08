@@ -1,0 +1,9 @@
+# .streamlit/config.toml
+
+[theme]
+base="dark"
+primaryColor="#1E90FF"      # Dodger Blue (you can customize this)
+backgroundColor="#0E1117"   # Near black
+secondaryBackgroundColor="#262730"
+textColor="#FAFAFA"         # Light gray/white text
+font="sans serif"           # Options: "sans serif", "serif", "monospace"
