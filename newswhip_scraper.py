@@ -5,10 +5,10 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
-from webdriver_manager.chrome import ChromeDriverManager
 import time
 import logging
 import os
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +31,74 @@ class NewswhipScraper:
         self.wait = None
         self.actions = None
         
+    def _get_chromedriver_path(self):
+        """
+        Get the path to ChromeDriver, preferring system installation.
+        
+        Returns:
+            str: Path to ChromeDriver executable
+        """
+        # Try system-installed chromedriver first
+        system_paths = [
+            '/usr/bin/chromedriver',
+            '/usr/local/bin/chromedriver',
+            '/opt/google/chrome/chromedriver',
+        ]
+        
+        for path in system_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                logger.info(f"Using system ChromeDriver at: {path}")
+                return path
+        
+        # Try to find chromedriver in PATH
+        chromedriver_path = shutil.which('chromedriver')
+        if chromedriver_path:
+            logger.info(f"Found ChromeDriver in PATH: {chromedriver_path}")
+            return chromedriver_path
+        
+        # Fallback to webdriver-manager only if system chromedriver not found
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            path = ChromeDriverManager().install()
+            logger.info(f"Using WebDriverManager ChromeDriver: {path}")
+            return path
+        except Exception as e:
+            logger.error(f"Failed to get ChromeDriver path: {e}")
+            raise Exception("ChromeDriver not found. Please ensure it's installed.")
+        
     def _setup_driver(self):
         """Set up the Chrome driver with proper options."""
         options = Options()
-        options.add_argument("--headless")
+        
+        # Essential options for headless operation
+        options.add_argument("--headless=new")  # Use new headless mode
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-features=TranslateUI")
+        options.add_argument("--disable-ipc-flooding-protection")
+        options.add_argument("--window-size=1920,1080")
         options.add_argument("--start-maximized")
+        
+        # Additional options for container environments
+        options.add_argument("--remote-debugging-port=9222")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-sync")
+        options.add_argument("--disable-translate")
+        options.add_argument("--hide-scrollbars")
+        options.add_argument("--metrics-recording-only")
+        options.add_argument("--mute-audio")
+        options.add_argument("--no-first-run")
+        options.add_argument("--safebrowsing-disable-auto-update")
+        options.add_argument("--ignore-certificate-errors")
+        options.add_argument("--ignore-ssl-errors")
+        options.add_argument("--ignore-certificate-errors-spki-list")
         
         # Set download preferences
         download_path = os.path.join(os.getcwd(), "downloads")
@@ -47,16 +108,42 @@ class NewswhipScraper:
             "download.default_directory": download_path,
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
-            "safebrowsing.enabled": False
+            "safebrowsing.enabled": False,
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.default_content_settings.popups": 0,
+            "profile.managed_default_content_settings.images": 2
         }
         options.add_experimental_option("prefs", prefs)
         
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-        self.wait = WebDriverWait(self.driver, 20)
-        self.actions = ActionChains(self.driver)
+        try:
+            # Get ChromeDriver path
+            chromedriver_path = self._get_chromedriver_path()
+            service = Service(chromedriver_path)
+            
+            self.driver = webdriver.Chrome(service=service, options=options)
+            self.wait = WebDriverWait(self.driver, 20)
+            self.actions = ActionChains(self.driver)
+            logger.info("Chrome driver has been set up successfully")
+            
+            return download_path
+            
+        except Exception as e:
+            logger.error(f"Failed to setup Chrome driver: {e}")
+            raise Exception(f"Failed to initialize ChromeDriver: {e}")
         
-        return download_path
-        
+    def close(self):
+        """Close the browser and clean up resources."""
+        if self.driver:
+            logger.info("Closing browser session")
+            try:
+                self.driver.quit()
+            except Exception as e:
+                logger.error(f"Error closing driver: {str(e)}")
+            finally:
+                self.driver = None
+                self.wait = None
+                self.actions = None
+                
     def _login(self):
         """Log in to the Newswhip platform."""
         logger.info("Logging into Newswhip")
@@ -127,18 +214,17 @@ class NewswhipScraper:
             )))
             folder_button.click()
             logger.info(f"Folder '{folder_name}' selected successfully.")
+            
             try:
                 # Wait for the tooltip's close button to be clickable
-                tooltip_close_button = wait.until(EC.element_to_be_clickable((
+                tooltip_close_button = self.wait.until(EC.element_to_be_clickable((
                     By.XPATH, "//div[contains(@class, 'cdk-overlay-pane')]//button[contains(@class, 'btn-close') and contains(@class, 'close-button')]"
                 )))
                 tooltip_close_button.click()
-                print("ℹ️ Closed the 'Top Themes Highlight' tooltip.")
+                logger.info("Closed the 'Top Themes Highlight' tooltip.")
                 time.sleep(1) # Brief pause after closing
             except Exception as e:
-                print(f"ℹ️ 'Top Themes Highlight' tooltip not found or already closed: {e}")
-            # Wait for content to load and refresh
-            # time.sleep(2)
+                logger.info(f"'Top Themes Highlight' tooltip not found or already closed: {e}")
 
             # Open Date Selection Dropdown
             date_selection_button = self.wait.until(EC.element_to_be_clickable((
@@ -164,18 +250,13 @@ class NewswhipScraper:
                 label.click()
                 
                 # Find the closest ancestor div that acts as a container for this radio option
-                # This container typically has a class like 'radio' or a similar grouping class.
-                # We assume the input type="number" is within this container.
                 parent_container = label.find_element(By.XPATH, "./ancestor::div[contains(@class, 'radio')][1]")
                 
                 # Find the number input field within this specific parent container
                 input_field = parent_container.find_element(By.XPATH, ".//input[@type='number']")
-                # Optional: If you also want to ensure min/max attributes match, you can use:
-                # input_field = parent_container.find_element(By.XPATH, ".//input[@type='number' and @min='1' and @max='24']")
                 
                 input_field.clear()
-                # input_field.send_keys("24") # Uncomment if you want to programmatically set the value
-                print(f"✅ Selected {label_description}.")
+                logger.info(f"Selected {label_description}.")
 
             elif time_choice == "2":
                 label_xpath_prefix = "relative-time-days-"
@@ -188,12 +269,9 @@ class NewswhipScraper:
                 
                 parent_container = label.find_element(By.XPATH, "./ancestor::div[contains(@class, 'radio')][1]")
                 input_field = parent_container.find_element(By.XPATH, ".//input[@type='number']")
-                # Optional: For more specificity:
-                # input_field = parent_container.find_element(By.XPATH, ".//input[@type='number' and @min='1' and @max='365']")
                 
                 input_field.clear()
-                # input_field.send_keys("7")
-                print(f"✅ Selected {label_description}.")
+                logger.info(f"Selected {label_description}.")
 
             elif time_choice == "3":
                 label_xpath_prefix = "relative-time-months-"
@@ -206,12 +284,9 @@ class NewswhipScraper:
                 
                 parent_container = label.find_element(By.XPATH, "./ancestor::div[contains(@class, 'radio')][1]")
                 input_field = parent_container.find_element(By.XPATH, ".//input[@type='number']")
-                # Optional: For more specificity:
-                # input_field = parent_container.find_element(By.XPATH, ".//input[@type='number' and @min='1' and @max='12']")
                 
                 input_field.clear()
-                # input_field.send_keys("1")
-                print(f"✅ Selected {label_description}.")
+                logger.info(f"Selected {label_description}.")
 
             elif time_choice == "4":
                 label_xpath_prefix = "full-year-"
@@ -223,7 +298,7 @@ class NewswhipScraper:
                     By.XPATH, f"//label[starts-with(@for, '{label_xpath_prefix}')]"
                 )))
                 label.click()
-                print(f"✅ Selected {label_description}.")
+                logger.info(f"Selected {label_description}.")
     
             # Click Apply Button
             apply_button = self.wait.until(EC.element_to_be_clickable((
