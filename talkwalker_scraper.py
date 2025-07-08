@@ -432,7 +432,7 @@ class TalkwalkerScraper:
                     element.click()
                     logger.info(f"Selected time period using direct selection: {label}")
                 except Exception as e:
-                    logger.warning(f"Direct time period selection failed: {str(e)}", trying dropdown method...)
+                    logger.warning(f"Direct time period selection failed: {str(e)}, trying dropdown method...")
                     # Fallback to dropdown method
                     try:
                         self._select_time_period_from_dropdown(data_id, label)
